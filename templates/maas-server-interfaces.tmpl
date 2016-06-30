@@ -1,0 +1,21 @@
+# MAAS server interfaces configuration
+#
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+  address @MAAS_PRIV_IP@
+  netmask @PRIV_NETMASK@
+
+auto eth1
+iface eth1 inet static
+  address @MAAS_PUB_IP@
+  netmask @PUB_NETMASK@
+  gateway @PUB_GW@
+  dns-nameservers @DNS_NS@
+  dns-search maas
