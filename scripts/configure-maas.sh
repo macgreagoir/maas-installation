@@ -25,41 +25,32 @@ set -eu
 MAAS_INSTALL=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
 
 source $MAAS_INSTALL/secrets/network.sh || exit $?
-: ${MAAS_PRIV_IFACE?} ${MAAS_PRIV_IP?} ${IP_RANGE_HIGH?} ${IP_RANGE_LOW?} \
-  ${MANAGEMENT?} ${BROADCAST_IP?} ${ROUTER_IP?}
+: ${MAAS_PRIV_IP?} ${DYNAMIC_RANGE_HIGH?} ${DYNAMIC_RANGE_LOW?} \
+  ${PRIV_GW?} ${PRIV_SUBNET?}
 source $MAAS_INSTALL/secrets/maas-config.sh || exit $?
-: ${MAAS_USER?} ${MAAS_USER_PASSWD?}
+: ${MAAS_USER?} ${MAAS_USER_PASSWD?} ${MAAS_DOMAIN?}
 
 # Create $MAAS_USER user
-if [[ -z "$(sudo maas-region-admin apikey --username $MAAS_USER)" ]]; then
+if [[ -z "$(sudo maas-region apikey --username $MAAS_USER)" ]]; then
     sudo maas-region-admin createadmin \
         --username=${MAAS_USER} --password=${MAAS_USER_PASSWD} \
-        --email=ubuntu$(hostname)
-    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/1.0/ \
-        "$(sudo maas-region-admin apikey --username $MAAS_USER)"
+        --email=ubuntu@$(hostname).${MAAS_DOMAIN}
+    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/2.0/ \
+        "$(sudo maas-region apikey --username $MAAS_USER)"
 
     # Set the key to be set on nodes
-    maas $MAAS_USER sshkeys new key="$(cat ~/.ssh/id_rsa.pub)"
+    maas $MAAS_USER sshkeys create key="$(cat ~/.ssh/id_rsa.pub)"
 else
     # It already exists, so login
-    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/1.0/ \
-        "$(sudo maas-region-admin apikey --username $MAAS_USER)"
+    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/2.0/ \
+        "$(sudo maas-region apikey --username $MAAS_USER)"
 fi
 
 # Configure DHCP
-# The interface as set in the maas-server-interfaces.tmpl
-# DHCP scope options come from network.sh and are written to a string for
-# node-group-interface update
-# TODO How can we set the domain name ($MAAS_DOMAIN)?
-dhcp_options=''
-for o in STATIC_IP_RANGE_HIGH STATIC_IP_RANGE_LOW \
-         IP_RANGE_HIGH IP_RANGE_LOW \
-         MANAGEMENT BROADCAST_IP ROUTER_IP; do
-    dhcp_options="$dhcp_options ${o,,}=${!o}"
-done
-node_group_uuid=$(maas $MAAS_USER node-groups list | awk -F\" '/uuid/ {print $4}')
-maas $MAAS_USER node-group-interface update \
-    $node_group_uuid $MAAS_PRIV_IFACE $dhcp_options
+maas $MAAS_USER ipranges create type=dynamic start_ip=${DYNAMIC_RANGE_LOW} end_ip=${DYNAMIC_RANGE_HIGH}
+maas $MAAS_USER ipranges create type=reserved start_ip=${RESERVED_RANGE_LOW} end_ip=${RESERVED_RANGE_HIGH}
+fabric=$(maas $MAAS_USER subnet update $PRIV_SUBNET gateway_ip=${PRIV_GW} | awk -F\" '/fabric/ {print $4}')
+maas $MAAS_USER vlan update $fabric untagged dhcp_on=True primary_rack=$(hostname)
 
 # Import the PXE boot images
 # NOTE This returns asynchronously, before the downloads complete
@@ -71,12 +62,6 @@ if [[ -n "$UPSTREAM_DNS" ]]; then
 fi
 
 # Set the default kernel opts for consoles
-maas maas-root maas set-config name=kernel_opts \
+maas $MAAS_USER maas set-config name=kernel_opts \
     value="console=tty0 console=ttyS0,115200 console=ttyS1,115200 panic=30 raid=noautodetect"
-
-# Set the kernel opts for the virtual tag if it exists
-if maas maas-root tag read virtual 2>&1 >/dev/null; then 
-    maas maas-root tag update virtual \
-       kernel_opts='console=tty0 console=ttyS0,115200 panic=30'
-fi
 

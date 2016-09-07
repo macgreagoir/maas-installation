@@ -37,13 +37,34 @@ source $SECRETS_DIR/network.sh || exit $?
 source $SECRETS_DIR/maas-config.sh || exit $?
 : ${MAAS_DOMAIN?} ${MAAS_USER?} ${MAAS_ARCH?} ${RESCUE_USER_PASS?}
 
-if [ -f /etc/maas/maas_cluster.conf ]; then
+# Build a list
+machines=""
+
+# Commands to add and update machines/nodes and tags
+MACHINES_ADD='nodes new autodetect_nodegroup=yes'
+MACHINES_LIST='nodes list'
+MACHINE_UPDATE='node update'
+TAGS_ADD='tags new'
+MACHINE_READ='node read'
+MACHINE_COMMISSION='node commission'
+[[ -f /etc/maas/maas_cluster.conf ]] && {
     # maas 1.8, just load below file for MAAS_URL
     . /etc/maas/maas_cluster.conf
-else
-    # maas 1.9+
+}
+[[ -f /etc/maas/clusterd.conf ]] && {
+    # maas 1.9
     MAAS_URL=$(awk -F": " '/maas_url/ { print $2 }' /etc/maas/clusterd.conf)
-fi
+}
+[[ -f /etc/maas/rackd.conf ]] && {
+    # maas 2.x
+    MAAS_URL=$(awk -F": " '/maas_url/ { print $2 }' /etc/maas/rackd.conf)
+    MACHINES_ADD='machines create power_type=ipmi'
+    MACHINES_LIST='machines read'
+    MACHINE_UPDATE='machine update'
+    TAGS_ADD='tags create'
+    MACHINE_READ='machine read'
+    MACHINE_COMMISSION='machine commission'
+}
 
 # Fail if no MAAS_URL set
 : ${MAAS_URL?}
@@ -70,28 +91,29 @@ maas_node_setup() {
     if [ -n "$macs_args" ]; then
         # Soft-fail if already present
         (set -x
-        maas ${MAAS_USER} nodes new $macs_args architecture=${MAAS_ARCH} hostname=$hostname.$MAAS_DOMAIN autodetect_nodegroup=yes >/dev/null
+        maas $MAAS_USER $MACHINES_ADD $macs_args architecture=${MAAS_ARCH} hostname=${hostname}.${MAAS_DOMAIN} >/dev/null
         ) || true
     fi
 
     # Use both hostname with and w/o MAAS_DOMAIN, matches any
-    local system_id=$(maas ${MAAS_USER} nodes list hostname=$hostname hostname=$hostname.$MAAS_DOMAIN|sed -nr '/system_id/s/.* "(.*)",/\1/p')
+    local system_id=$(maas $MAAS_USER $MACHINES_LIST hostname=${hostname} hostname=${hostname}.${MAAS_DOMAIN} | sed -nr '/system_id/s/.* "(.*)",/\1/p')
     echo "ip=$priv_ip mac=$priv_mac system_id=$system_id"
-    test -n "$system_id" || { echo "hostname=$hostname not found, skipping" ;return 0; }
+    test -n "$system_id" || { echo "hostname=$hostname not found, skipping"; return 0; }
+    machines="$machines $system_id"
     # Update node: add MAAS_ARCH, IPMI type and auth, use-fastpath-installer
-    (set -x;maas ${MAAS_USER} node update $system_id architecture=${MAAS_ARCH})
+    (set -x;maas $MAAS_USER $MACHINE_UPDATE $system_id architecture=${MAAS_ARCH})
     if [ $ipmi_ip != "-" ]; then
         # TODO Not sure I like the tag match yet
         if [[ $tags =~ 'virtual' ]]; then
             # $ipmi_ip is the priv addr of the hosting system
             # $user and $pass are for a user on the host system in the libvirtd group
-            (set -x;maas ${MAAS_USER} node update $system_id \
+            (set -x;maas $MAAS_USER $MACHINE_UPDATE $system_id \
                 power_type=virsh \
                 power_parameters_power_address="qemu+ssh://${user}@${ipmi_ip}/system" \
                 power_parameters_power_id=$hostname \
                 power_parameters_power_pass=$pass)
         else
-            (set -x;maas ${MAAS_USER} node update $system_id \
+            (set -x;maas $MAAS_USER $MACHINE_UPDATE $system_id \
                 power_type=ipmi \
                 power_parameters_power_driver=LAN_2_0 \
                 power_parameters_power_address=$ipmi_ip \
@@ -100,19 +122,21 @@ maas_node_setup() {
         fi
     fi
 
-(set -x
-    # maas 1.7:
-    maas ${MAAS_USER} tag update-nodes use-fastpath-installer add=$system_id || true
-    # only maas 1.8, softfail:
-    maas ${MAAS_USER} node update $system_id boot_type=fastpath > /dev/null || true
-)
+    if [[ $MACHINE_UPDATE =~ 'node' ]]; then
+        (set -x
+            # maas 1.7:
+            maas $MAAS_USER tag update-nodes use-fastpath-installer add=$system_id > /dev/null || true
+            # only maas 1.8, softfail:
+            maas $MAAS_USER node update $system_id boot_type=fastpath > /dev/null || true
+        )
+    fi
 
     if [ -n "$tags" ]; then
         # Replace , by space:
         for tag in ${tags//,/ };do
             (set -x +e # ignore if existing
-            maas ${MAAS_USER} tags new name="$tag"
-            maas ${MAAS_USER} tag update-nodes $tag add=$system_id
+            maas $MAAS_USER $TAGS_ADD name="$tag"
+            maas $MAAS_USER tag update-nodes $tag add=$system_id
             ) >/dev/null
         done
     fi
@@ -138,9 +162,16 @@ main() {
     priv_mac=${8:?missing priv mac}
     pub_mac=${9:?missing pub mac}
 
-    maas_node_setup   $hostname $tags $user $pass $ipmi_ip $priv_ip $pub_ip $priv_mac $pub_mac
+    maas_node_setup $hostname $tags $user $pass $ipmi_ip $priv_ip $pub_ip $priv_mac $pub_mac
 }
 
-HOST_INVENTORY=$SECRETS_DIR/host-inventory.txt
+HOST_INVENTORY=${SECRETS_DIR}/host-inventory.txt
 
 main_line $HOST_INVENTORY
+
+# Machines can start and fail before power config is completed
+for id in $machines; do
+    if [[ $(maas $MAAS_USER $MACHINE_READ $id | grep -i status.*failed.*commissioning) ]]; then
+        maas $MAAS_USER $MACHINE_COMMISSION $id
+    fi
+done

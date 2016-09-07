@@ -36,7 +36,7 @@ Install and Configure MAAS
  * `cp example-secrets/* secrets/` to work from example scripts
  * `secrets/network.sh` should be correct for the network configuration
  * `secrets/maas-config.sh` provides passwords and other options used by MAAS
- * `secrets/host-inventroy.txt` provides items for MAAS node configurations
+ * `secrets/host-inventory.txt` provides items for MAAS node configurations
 
 1. Install and configure MAAS
 

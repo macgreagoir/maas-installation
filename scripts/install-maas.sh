@@ -25,10 +25,9 @@ set -eu
 MAAS_INSTALL=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
 
 source $MAAS_INSTALL/secrets/network.sh || exit $?
-: ${MAAS_PRIV_IFACE?} ${MAAS_PRIV_IP?} ${IP_RANGE_HIGH?} ${IP_RANGE_LOW?} \
-  ${MANAGEMENT?} ${BROADCAST_IP?} ${ROUTER_IP?}
+: ${MAAS_PRIV_IP?}
 source $MAAS_INSTALL/secrets/maas-config.sh || exit $?
-: ${MAAS_USER?} ${MAAS_USER_PASSWD?}
+: ${MAAS_USER?} ${MAAS_USER_PASSWD?} ${MAAS_DOMAIN?}
 
 set +e
 # Generate a passwdless ssh key, if one does not exist
@@ -42,8 +41,8 @@ grep -q LC_ALL /etc/default/locale ||
 # Install maas
 # NOTE If re-installing first `sudo apt-get purge maas* bind9 dbconfig-common* postgresql*`
 dpkg -l software-properties-common > /dev/null || sudo apt-get install -y software-properties-common
-[[ -f /etc/apt/sources.list.d/maas-stable-trusty.list ]] || {
-    sudo add-apt-repository -y ppa:maas/stable  # 1.9
+[[ -f /etc/apt/sources.list.d/maas-ubuntu-stable-xenial.list ]] || {
+    sudo add-apt-repository -y ppa:maas/stable
     sudo apt-get update
 }
 # libapache2-mod-wsgi has been seen to be missing after a purge
@@ -58,36 +57,27 @@ grep -q dnssec-validation /etc/bind/named.conf.options &&
 
 sudo service bind9 restart
 
-# Only listen as proxy on private addr, lp#1379567
-maas_proxy_conf=/usr/share/maas/maas-proxy.conf
-[[ -f $maas_proxy_conf ]] || maas_proxy_conf=/etc/maas/maas-proxy.conf
-sudo sed -i \
-    -e "s/^http_port 3128 transparent/http_port ${MAAS_PRIV_IP}:3128 transparent/" \
-    -e "s/^http_port 8000/http_port ${MAAS_PRIV_IP}:8000/" \
-    $maas_proxy_conf
-sudo service maas-proxy restart
-
 # Reconfig MAAS for private addrs 
-echo "set maas-cluster-controller/maas-url http://${MAAS_PRIV_IP}/MAAS/" \
+echo "set maas-rack-controller/maas-url http://${MAAS_PRIV_IP}/MAAS/" \
     | sudo debconf-communicate
 echo "set maas/default-maas-url ${MAAS_PRIV_IP}" \
     | sudo debconf-communicate
-sudo dpkg-reconfigure -fnoninteractive maas-cluster-controller
+sudo dpkg-reconfigure -fnoninteractive maas-rack-controller
 sudo dpkg-reconfigure -fnoninteractive maas-region-controller
 
 # Create $MAAS_USER user
-if [[ -z "$(sudo maas-region-admin apikey --username $MAAS_USER)" ]]; then
-    sudo maas-region-admin createadmin \
+if [[ -z "$(sudo maas-region apikey --username $MAAS_USER)" ]]; then
+    sudo maas-region createadmin \
         --username=${MAAS_USER} --password=${MAAS_USER_PASSWD} \
-        --email=ubuntu$(hostname)
-    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/1.0/ \
-        "$(sudo maas-region-admin apikey --username $MAAS_USER)"
+        --email=ubuntu@$(hostname).${MAAS_DOMAIN}
+    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/2.0/ \
+        "$(sudo maas-region apikey --username $MAAS_USER)"
 
     # Set the key to be set on nodes
-    maas $MAAS_USER sshkeys new key="$(cat ~/.ssh/id_rsa.pub)"
+    maas $MAAS_USER sshkeys create key="$(cat ~/.ssh/id_rsa.pub)"
 else
     # It already exists, so login
-    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/1.0/ \
-        "$(sudo maas-region-admin apikey --username $MAAS_USER)"
+    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/2.0/ \
+        "$(sudo maas-region apikey --username $MAAS_USER)"
 fi
 

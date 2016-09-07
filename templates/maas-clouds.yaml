@@ -1,0 +1,9 @@
+# juju add-cloud maas-cloud ~/maas-clouds.yaml
+# maas-region apikey --username=${MAAS_USER}
+# juju add-credential maas-cloud
+# juju bootstrap maas-controller maas-cloud --config ignore-machine-addresses=true --config enable-os-upgrade=false
+clouds:
+  maas-cloud:
+    type: maas
+    auth-types: [oauth1]
+    endpoint: http://${MAAS_PUBLIC_IP}/MAAS
