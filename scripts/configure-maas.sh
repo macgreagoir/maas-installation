@@ -25,7 +25,8 @@ set -eu
 MAAS_INSTALL=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
 
 source $MAAS_INSTALL/secrets/network.sh || exit $?
-: ${MAAS_PRIV_IP?} ${DYNAMIC_RANGE_HIGH?} ${DYNAMIC_RANGE_LOW?} \
+: ${RESERVED_RANGE_LOW?} ${RESERVED_RANGE_HIGH?} \
+  ${DYNAMIC_RANGE_LOW?} ${DYNAMIC_RANGE_HIGH?} \
   ${PRIV_GW?} ${PRIV_SUBNET?}
 source $MAAS_INSTALL/secrets/maas-config.sh || exit $?
 : ${MAAS_USER?} ${MAAS_USER_PASSWD?} ${MAAS_DOMAIN?}
@@ -35,14 +36,14 @@ if [[ -z "$(sudo maas-region apikey --username $MAAS_USER)" ]]; then
     sudo maas-region-admin createadmin \
         --username=${MAAS_USER} --password=${MAAS_USER_PASSWD} \
         --email=ubuntu@$(hostname).${MAAS_DOMAIN}
-    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/2.0/ \
+    maas login $MAAS_USER http://$(hostname).${MAAS_DOMAIN}/MAAS/api/2.0/ \
         "$(sudo maas-region apikey --username $MAAS_USER)"
 
     # Set the key to be set on nodes
     maas $MAAS_USER sshkeys create key="$(cat ~/.ssh/id_rsa.pub)"
 else
     # It already exists, so login
-    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/2.0/ \
+    maas login $MAAS_USER http://$(hostname).${MAAS_DOMAIN}/MAAS/api/2.0/ \
         "$(sudo maas-region apikey --username $MAAS_USER)"
 fi
 
@@ -65,3 +66,8 @@ fi
 maas $MAAS_USER maas set-config name=kernel_opts \
     value="console=tty0 console=ttyS0,115200 console=ttyS1,115200 panic=30 raid=noautodetect"
 
+# Allow IPv6 routing
+sed -e 's/^#net.ipv6.conf.all.forwarding=1/net.ipv6.conf.all.forwarding=1/' \
+    -e 's/^#net.ipv6.conf.all.accept_source_route = 0/net.ipv6.conf.all.accept_source_route = 1/' \
+    /etc/sysctl.conf
+sysctl -p

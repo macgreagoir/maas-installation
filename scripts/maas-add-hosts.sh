@@ -31,9 +31,6 @@ MAAS_INSTALL=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
 TEMPLATES_DIR=$MAAS_INSTALL/templates
 SECRETS_DIR=$MAAS_INSTALL/secrets
 
-source $SECRETS_DIR/network.sh || exit $?
-: ${PUB_NETMASK?} ${DNS_NS?}
-
 source $SECRETS_DIR/maas-config.sh || exit $?
 : ${MAAS_DOMAIN?} ${MAAS_USER?} ${MAAS_ARCH?} ${RESCUE_USER_PASS?}
 
@@ -81,7 +78,7 @@ echo MAAS_USER=$MAAS_USER
 echo MAAS_ARCH=$MAAS_ARCH
 
 maas_node_setup() {
-    local hostname=$1 tags=$2 user=$3 pass=$4 ipmi_ip=$5 priv_ip=$6 pub_ip=$7 priv_mac=$8 pub_mac=$9
+    local hostname=$1 tags=$2 user=$3 pass=$4 ipmi_ip=$5 priv_mac=$6 pub_mac=$7
     local mac macs_args=""
     for mac in $priv_mac $pub_mac; do
         if [ $mac != "-" ];then
@@ -97,7 +94,7 @@ maas_node_setup() {
 
     # Use both hostname with and w/o MAAS_DOMAIN, matches any
     local system_id=$(maas $MAAS_USER $MACHINES_LIST hostname=${hostname} hostname=${hostname}.${MAAS_DOMAIN} | sed -nr '/system_id/s/.* "(.*)",/\1/p')
-    echo "ip=$priv_ip mac=$priv_mac system_id=$system_id"
+    echo "mac=$priv_mac system_id=$system_id"
     test -n "$system_id" || { echo "hostname=$hostname not found, skipping"; return 0; }
     machines="$machines $system_id"
     # Update node: add MAAS_ARCH, IPMI type and auth, use-fastpath-installer
@@ -156,13 +153,10 @@ main() {
     user=${3:?missing user for ipmi, eg: root}
     pass=${4:?missing pass for ipmi, eg: n0tap4ss}
     ipmi_ip=${5:?missing private ip for ipmi, eg: 10.x.y.z+1}
-    priv_ip=${6:?missing private ip, eg: 10.x.y.z}
-    pub_ip=${7:?missing public ip, eg: a.b.c.d}
-    # TODO MACs may not be required and could be culled
-    priv_mac=${8:?missing priv mac}
-    pub_mac=${9:?missing pub mac}
+    priv_mac=${6:?missing priv mac}
+    pub_mac=${7:?missing pub mac}
 
-    maas_node_setup $hostname $tags $user $pass $ipmi_ip $priv_ip $pub_ip $priv_mac $pub_mac
+    maas_node_setup $hostname $tags $user $pass $ipmi_ip $priv_mac $pub_mac
 }
 
 HOST_INVENTORY=${SECRETS_DIR}/host-inventory.txt

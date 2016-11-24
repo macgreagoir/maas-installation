@@ -1,11 +1,11 @@
-#name	tags	ipmi_user	ipmi_passd	ipmi_ip		priv_ip		pub_ip		priv_mac		pub_mac
-node0	metal	root		XXXXXXXXXX	10.0.0.11	10.0.2.11	1.1.1.11	01:23:45:67:89:ab	01:23:45:67:89:ab
-node1	metal	root		XXXXXXXXXX	10.0.0.12	10.0.2.12	1.1.1.12	01:23:45:67:89:ab	01:23:45:67:89:ab
-node2	metal	root		XXXXXXXXXX	10.0.0.13	10.0.2.13	1.1.1.13	01:23:45:67:89:ab	01:23:45:67:89:ab
+#name	tags	ipmi_user	ipmi_passd	ipmi_ip		priv_mac		pub_mac
+node0	metal	root		XXXXXXXXXX	10.0.0.10	00:11:22:33:44:55	00:11:22:33:44:55
+node1	metal	root		XXXXXXXXXX	10.0.0.11	00:11:22:33:44:55	00:11:22:33:44:55
+node2	metal	root		XXXXXXXXXX	10.0.0.12	00:11:22:33:44:55	00:11:22:33:44:55
 # KVM example
 #  * tags includes virtual
 #  * ipmi_user is a local user on the host machine, in the libvirtd grp
 #  * MAAS 'Power address' is qemu+ssh://<ipmi_user>@<ipmi_ip>/system
 #  * MAAS 'Power ID' is name
 #  * MAAS 'Power password' is ipmi_passwd, local passwd of ipmi_user
-node3	virtual	virt		XXXXXXXXXX	10.0.2.10	10.0.2.14	1.1.1.14	01:23:45:67:89:ab	01:23:45:67:89:ab
+node3	virtual	virt		XXXXXXXXXX	192.168.122.1	00:11:22:33:44:55	00:11:22:33:44:55

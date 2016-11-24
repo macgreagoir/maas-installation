@@ -1,0 +1,26 @@
+# Example /etc/network/interfaces using a Hurricane Electric tunnel for IPv6
+auto lo
+iface lo inet6 loopback
+
+auto ens3
+iface ens3 inet6 static
+  address my:henet:ipv6:prefix::3
+  netmask 64
+  dns-nameservers 2001:4860:4860::8888
+
+iface ens3 inet static
+  address 192.168.122.10
+  netmask 255.255.255.0
+  gateway 192.168.122.1
+  dns-nameservers 8.8.8.8
+
+auto he-ipv6
+iface he-ipv6 inet6 v4tunnel
+  address my:henet:ipv6::client
+  netmask 64
+  endpoint my.henet.ipv4.server
+  local 192.168.122.10
+  ttl 255
+  # gateway my:henet:ipv6::server
+  up ip -6 r d default || true
+  post-up ip -6 r a default via my:henet:ipv6::server || true

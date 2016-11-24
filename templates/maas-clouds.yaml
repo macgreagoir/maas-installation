@@ -6,4 +6,4 @@ clouds:
   maas-cloud:
     type: maas
     auth-types: [oauth1]
-    endpoint: http://${MAAS_PUBLIC_IP}/MAAS
+    endpoint: http://${MAAS_PRIV_IP}/MAAS

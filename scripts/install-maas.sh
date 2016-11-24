@@ -24,10 +24,8 @@ set -eu
 # MAAS_INSTALL is my parent directory
 MAAS_INSTALL=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
 
-source $MAAS_INSTALL/secrets/network.sh || exit $?
-: ${MAAS_PRIV_IP?}
 source $MAAS_INSTALL/secrets/maas-config.sh || exit $?
-: ${MAAS_USER?} ${MAAS_USER_PASSWD?} ${MAAS_DOMAIN?}
+: ${MAAS_DOMAIN?}
 
 set +e
 # Generate a passwdless ssh key, if one does not exist
@@ -40,44 +38,22 @@ grep -q LC_ALL /etc/default/locale ||
 
 # Install maas
 # NOTE If re-installing first `sudo apt-get purge maas* bind9 dbconfig-common* postgresql*`
-dpkg -l software-properties-common > /dev/null || sudo apt-get install -y software-properties-common
-[[ -f /etc/apt/sources.list.d/maas-ubuntu-stable-xenial.list ]] || {
-    sudo add-apt-repository -y ppa:maas/stable
-    sudo apt-get update
-}
 # libapache2-mod-wsgi has been seen to be missing after a purge
 sudo apt-get install -y maas pwgen curl libapache2-mod-wsgi
+echo Required packages have been installed.
 
-# IPv4 only for bind
-grep -q OPTIONS.*\\-4 /etc/default/bind9 ||
-    sudo sed -i 's/^OPTIONS="\(.*\)/OPTIONS="-4 \1/' /etc/default/bind9
 # Remove duplicate dnssec config, lp:1540539
 grep -q dnssec-validation /etc/bind/named.conf.options &&
     sudo sed -i -r 's/dnssec-validation .*?;//' /etc/bind/named.conf.options
 
+echo bind9 configured.
 sudo service bind9 restart
 
-# Reconfig MAAS for private addrs 
-echo "set maas-rack-controller/maas-url http://${MAAS_PRIV_IP}/MAAS/" \
+# Reconfig MAAS for private addrs
+# Use hostname to work for both IPv6 and IPv4
+echo "set maas-rack-controller/maas-url http://$(hostname).${MAAS_DOMAIN}/MAAS/" \
     | sudo debconf-communicate
-echo "set maas/default-maas-url ${MAAS_PRIV_IP}" \
+echo "set maas/default-maas-url $(hostname).${MAAS_DOMAIN}" \
     | sudo debconf-communicate
 sudo dpkg-reconfigure -fnoninteractive maas-rack-controller
 sudo dpkg-reconfigure -fnoninteractive maas-region-controller
-
-# Create $MAAS_USER user
-if [[ -z "$(sudo maas-region apikey --username $MAAS_USER)" ]]; then
-    sudo maas-region createadmin \
-        --username=${MAAS_USER} --password=${MAAS_USER_PASSWD} \
-        --email=ubuntu@$(hostname).${MAAS_DOMAIN}
-    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/2.0/ \
-        "$(sudo maas-region apikey --username $MAAS_USER)"
-
-    # Set the key to be set on nodes
-    maas $MAAS_USER sshkeys create key="$(cat ~/.ssh/id_rsa.pub)"
-else
-    # It already exists, so login
-    maas login $MAAS_USER http://${MAAS_PRIV_IP}/MAAS/api/2.0/ \
-        "$(sudo maas-region apikey --username $MAAS_USER)"
-fi
-

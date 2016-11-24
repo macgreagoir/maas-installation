@@ -27,10 +27,13 @@ set -eu
 MAAS_INSTALL=$(cd $(dirname ${BASH_SOURCE[0]})/..; pwd)
 
 source $MAAS_INSTALL/secrets/network.sh || exit $?
-: ${MAAS_PRIV_IP?} ${PRIV_NETMASK?} ${MAAS_PUB_IP?} ${PUB_NETMASK?} ${PUB_GW?} ${DNS_NS?}
+: ${MAAS_PRIV_IP?} ${PRIV_NETMASK?} ${PRIV_GW?} ${DNS_NS?}
+
+source $MAAS_INSTALL/secrets/maas-config.sh || exit $?
+: ${MAAS_DOMAIN?}
 
 replace=''
-for v in MAAS_PRIV_IP PRIV_NETMASK MAAS_PUB_IP PUB_NETMASK PUB_GW DNS_NS; do
+for v in MAAS_PRIV_IP PRIV_NETMASK PRIV_GW DNS_NS MAAS_DOMAIN; do
   replace="${replace}s/@${v}@/${!v}/g;"
 done
 
